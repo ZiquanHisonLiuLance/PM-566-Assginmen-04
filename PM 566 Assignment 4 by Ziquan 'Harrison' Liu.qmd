@@ -19,17 +19,17 @@ fig-height: 18
 ---
 # Question 1
 ```{r}
-# Question 1
-# This whole chunk:
-# 1) Defines the original slow functions fun1() and fun2().
-# 2) Defines faster alternatives fun1alt() and fun2alt() using vectorized functions.
-# 3) Generates a test matrix dat.
-# 4) Checks that old and new versions give the same answers.
-# 5) Uses microbenchmark to compare their speed; you will read off "how much faster" from the output.
+# Question 1 whole chunk:
+# 1) Define the original slow functions fun1() and fun2().
+# 2) Define faster alternatives fun1alt() and fun2alt() using vectorized functions.
+# 3) Generate a test matrix dat.
+# 4) Check that old and new versions give the same answers.
+# 5) Use microbenchmark to compare their speed and show the results as nice HTML tables.
 
-# ----- Original slow functions (from assignment, kept here to be self-contained) -----
+# Original slow functions
 
-fun1 <- function(mat) {                      # Define original fun1(): compute row totals using an explicit for-loop.
+## Total for each row
+fun1 <- function(mat) {                      # Original fun1(): compute row totals using an explicit for-loop.
   n <- nrow(mat)                             # Get the number of rows in the matrix.
   ans <- double(n)                           # Create an empty numeric vector of length n to store each row's total.
   for (i in 1:n) {                           # Loop over each row index from 1 to n.
@@ -38,7 +38,8 @@ fun1 <- function(mat) {                      # Define original fun1(): compute r
   ans                                        # Return the vector of row sums.
 }
 
-fun2 <- function(mat) {                      # Define original fun2(): cumulative sums along each row using nested loops.
+## Running cumulative sum by row (original version)
+fun2 <- function(mat) {                      # Original fun2(): cumulative sums along each row using nested loops.
   n <- nrow(mat)                             # Get number of rows.
   k <- ncol(mat)                             # Get number of columns.
   ans <- mat                                 # Make a copy of the matrix; we will overwrite values with cumulative sums.
@@ -50,54 +51,97 @@ fun2 <- function(mat) {                      # Define original fun2(): cumulativ
   ans                                        # Return the matrix of row-wise cumulative sums.
 }
 
-# ----- Faster alternative versions -----
+# Faster alternative versions
 
-fun1alt <- function(mat) {                   # Define faster fun1alt(): compute row totals in a vectorized way.
+fun1alt <- function(mat) {                   # Faster fun1alt(): compute row totals in a vectorized way.
   rowSums(mat)                               # rowSums() is a built-in C-optimized function: it returns sum of each row directly.
 }
 
-fun2alt <- function(mat) {                   # Define faster fun2alt(): cumulative sums along each row using apply() + cumsum().
-  t(apply(mat, 1, cumsum))                   # apply(..., 1, cumsum) computes cumulative sum for each row; t() transposes back to original shape.
+fun2alt <- function(mat) {                   # Faster fun2alt(): cumulative sums along each row using apply() + cumsum().
+  t(apply(mat, 1, cumsum))                   # apply(..., 1, cumsum) computes cumulative sum for each row; t() restores original orientation.
 }
 
-# ----- Generate test data matrix dat -----
+# Generate test data matrix dat
 
-set.seed(2315)                               # Fix random seed so the random numbers (and results) are reproducible.
+set.seed(26)                                 # Fix random seed so the random numbers (and results) are reproducible.
 dat <- matrix(                               # Create a numeric matrix called dat.
   rnorm(200 * 100),                          # Generate 200*100 random numbers from a Normal(0,1) distribution.
   nrow = 200                                 # Arrange them into 200 rows and 100 columns.
 )
 
-# ----- Check that new functions match the originals -----
+# Check that new functions match the originals
 
-all.equal(fun1(dat), fun1alt(dat))           # Compare original fun1() output with fun1alt(); TRUE (or near-TRUE) means they match.
+all.equal(fun1(dat), fun1alt(dat))           # TRUE here means the row-totals function and its faster version give identical results.
+all.equal(fun2(dat), fun2alt(dat))           # TRUE here means the cumulative-sum function and its faster version also match exactly.
 
-all.equal(fun2(dat), fun2alt(dat))           # Compare original fun2() output with fun2alt(); again expecting TRUE (or near-TRUE).
+# Compare speed using microbenchmark and show as tables
 
-# ----- Compare speed using microbenchmark -----
+library(microbenchmark)                      # Load the microbenchmark package that performs precise timing comparisons.
 
-microbenchmark::microbenchmark(              # Use microbenchmark from the microbenchmark package to time both versions of fun1().
-  fun1(dat),                                 # Time the original loop-based fun1() on the test matrix dat.
-  fun1alt(dat),                              # Time the new vectorized fun1alt() on the same data.
-  unit = "relative"                          # Report times relative to the fastest method (fastest will have value 1.0).
+# Benchmark fun1() vs fun1alt()
+mb1 <- microbenchmark::microbenchmark(       # Run many timed repetitions of both functions on the same data.
+  fun1(dat),                                 # Original loop-based implementation.
+  fun1alt(dat),                              # Vectorized implementation using rowSums().
+  unit  = "relative",                        # Express times relative to the fastest method (fastest will be 1.0).
+  times = 200                                # Repeat 200 times to average out random fluctuations in timing.
 )
-# In the printed output, if fun1 has relative time ~5 and fun1alt ~1, then fun1alt is about 5 times faster.
 
-microbenchmark::microbenchmark(              # Now do the same timing comparison for fun2() and fun2alt().
-  fun2(dat),                                 # Time the original nested-loop fun2().
-  fun2alt(dat),                              # Time the new version using apply() + cumsum().
-  unit = "relative"                          # Again, smaller relative value = faster; you read off “how many times faster” yourself.
+# Benchmark fun2() vs fun2alt()
+mb2 <- microbenchmark::microbenchmark(       # Same idea, but for the cumulative-sum functions.
+  fun2(dat),                                 # Original nested-loop implementation.
+  fun2alt(dat),                              # Version using apply() + cumsum().
+  unit  = "relative",
+  times = 200
 )
-# To answer “How much faster is it?”, look at the microbenchmark output on your machine:
-# ratio = (relative time of slower) / (relative time of faster).
-# This ratio depends on your hardware, so you should report your own observed numbers.
 
+# Turn the microbenchmark results into data.frames
+mb1_tab <- summary(mb1)                      # summary() converts the microbenchmark result into a data.frame (2 rows x 9 columns).
+mb2_tab <- summary(mb2)                      # Same for the second benchmark.
+
+# Display nice HTML tables in the rendered report
+knitr::kable(                                # kable() renders a clean table suitable for HTML/PDF output.
+  mb1_tab,                                   # Use the data.frame with timing statistics for fun1 vs fun1alt.
+  digits  = 3,                               # Round numeric columns to 3 decimal places for readability.
+  caption = "Relative timing for fun1(dat) vs fun1alt(dat)"  # Caption explains what this table summarizes.
+)
+
+knitr::kable(                                # Create a second pretty table for fun2 vs fun2alt.
+  mb2_tab,
+  digits  = 3,
+  caption = "Relative timing for fun2(dat) vs fun2alt(dat)"
+)
+
+# Interpretation note (for yourself / TA, not required in code):
+# In each table, fun1alt(dat) and fun2alt(dat) should have mean/median around 1.0 (the reference),
+# while fun1(dat) and fun2(dat) have mean/median > 1.0. The ratio shows how many times slower
+# the original implementations are compared to the optimized ones.
+```
+## By using all.equal() to confirm that fun1alt() and fun2alt() provide identical results to the original implementations.According to microbenchmark(..., unit = "relative"), on my system, the original fun1() is about 20 times slower than fun1alt() (relative mean ≈ 22 versus 1.0), while fun2() is around 3.3 times (using mean) slower than fun2alt(). The precise speedup fluctuates somewhat across runs owing to operating system scheduling and measurement variability; nevertheless, the overarching trend indicating that the vectorized alternatives are much faster remains constant.
+
+```{r}
+# The following function allows us to estimate the value of pie through simulation:
+sim_pi <- function(n = 1000, i = NULL) {
+  p <- matrix(runif(n*2), ncol = 2)
+  mean(rowSums(p^2) < 1) * 4
+}
+
+# Here is an example of the run
+set.seed(26)
+sim_pi(1000)
+```
+
+```{r}
+# This runs the simulation a 4,000 times, each with 10,000 points
+set.seed(26)
+system.time({
+  ans <- unlist(lapply(1:4000, sim_pi, n = 10000))
+  print(mean(ans))
+})
 ```
 
 # Question 2
 ```{r}
-# Question 2
-# This chunk:
+# Question 2 chunk:
 # 1) Defines the sim_pi() function (same as in the assignment).
 # 2) Sets up a parallel cluster using the parallel package.
 # 3) Uses parLapply() to run sim_pi() 4,000 times in parallel, each with n = 10,000.
@@ -114,7 +158,7 @@ sim_pi <- function(n = 1000, i = NULL) {     # Define sim_pi(): n is number of r
 library(parallel)                            # Attach the parallel package to access makeCluster(), parLapply(), etc.
 
 # Use same seed as serial example for comparability (exact random streams still differ in parallel).
-set.seed(1231)                               # Set the random seed so your overall result is roughly reproducible across runs.
+set.seed(26)                               # Set the random seed so your overall result is roughly reproducible across runs.
 
 # Create a cluster of worker processes.
 cl <- makeCluster(detectCores() - 1)         # Start a cluster using one fewer core than available, leaving 1 core for the OS/other work.
@@ -122,7 +166,7 @@ cl <- makeCluster(detectCores() - 1)         # Start a cluster using one fewer c
 # Make sim_pi() available on all workers in the cluster.
 clusterExport(cl, "sim_pi")                  # Send the definition of sim_pi() to each worker process so they can call it.
 
-# Optionally make random number generation reproducible across workers.
+# make random number generation reproducible across workers.
 clusterSetRNGStream(cl, 1231)                # Initialize random streams on each worker using a common seed (helps reproducibility).
 
 # Time the parallel computation: 4,000 simulations with n = 10,000 each, run across multiple cores.
@@ -140,21 +184,17 @@ system.time({                                # Measure how long the entire paral
 
 # Stop the cluster when finished to clean up resources.
 stopCluster(cl)                              # Shut down all worker processes so they do not keep running in the background.
-
-# To see how much faster this is:
-# - Run the original serial code with lapply() and system.time() (from the assignment).
-# - Compare the 'elapsed' times: speedup ≈ (serial elapsed) / (parallel elapsed).
-#   For example, 8 seconds serial vs. 3 seconds parallel ≈ 2.7x faster.
 ```
+## The estimated value of π was about 3.14, indicating that the parallelization changed only the computation time, not the result.
 
 # Question 3
 ```{r setup_sql, message=FALSE, warning=FALSE}
 # Question 3–6: setup database tables
-# This chunk:
+# This chunk was used:
 # 1) Downloads the movie tables from GitHub as data frames.
 # 2) Writes them into the in-memory SQLite database `con` as tables: film, film_category, category.
 # 3) After this, the SQL chunks can query these tables.
-library(RSQLite)                                   # Load RSQLite so we can work with SQLite databases.
+library(RSQLite)                                   # Load RSQLite so can work with SQLite databases.
 library(DBI)                                       # Load DBI which provides generic database interface functions.
 
 # Initialize a temporary in-memory SQLite database.
@@ -177,7 +217,6 @@ dbWriteTable(con, "category", category)            # Create a table 'category' a
 ```
 
 ```{sql, connection=con}
--- Question 3
 -- This query counts how many films there are in each rating category (e.g. G, PG, PG-13, R, etc.).
 -- It groups rows in the 'film' table by the 'rating' column and counts the number of films in each group.
 
@@ -191,11 +230,10 @@ GROUP BY
 ORDER BY
   n_movies DESC;                             -- Sort from most common rating to least common, for easier reading.
 ```
-
+## Based on the table result, there are total 5 rating catories in the dataset.For PG-13 there are 223 movies availeble, for NC-17 are 210, for R are 195, for PG are 194, and for G are 180. PG-13 had the largest number of movies whereas R had the least.
 
 # Question 4
 ```{sql, connection=con}
--- Question 4
 -- This query calculates, for each rating category, the average replacement cost and average rental rate.
 -- It summarizes the 'replacement_cost' and 'rental_rate' columns within each rating group.
 
@@ -210,13 +248,13 @@ GROUP BY
 ORDER BY
   rating;                                        -- Order the output alphabetically by rating.
 ```
+## Accoding to the table result, the G category had about 20.12 average to replacement cost, and 2.91 avarage rental rate; the NC-17 had about 20.13 average to replacement cost, and 2.97 avarage rental rate; the PG category had about 18.96 average to replacement cost, and 3.05 avarage rental rate; the PG-13 category had about 20.40 average to replacement cost, and 3.03 avarage rental rate; and the PG-R category had about 20.23 average to replacement cost, and 2.94 avarage rental rate. For the average to replacement cost, category PG-13 ranked in the highest whereas category PG ranked in the lowest. In terms of avarage rental rate, category PG ranked in the highest whereas category G ranked in the lowest.
 
 # Question 5
 ```{sql, connection=con}
--- Question 5
 -- This query uses the film_category table together with the film table
 -- to count how many films belong to each category_id.
--- We join on film_id to ensure we only count valid films, then group by category_id.
+-- join on film_id to ensure only count valid films, then group by category_id.
 
 SELECT
   fc.category_id,                            -- The category ID (e.g., 1 = Action, 2 = Animation).
@@ -232,6 +270,7 @@ GROUP BY
 ORDER BY
   n_films DESC;                              -- Sort from most popular category_id (most films) to least.
 ```
+## According to the table results, id 15 had the most number of films (74), whereas id 12 had the lowest (51).
 
 # Question 6
 ```{sql, connection=con}
@@ -261,3 +300,4 @@ ORDER BY
 LIMIT
   1;                                         -- Keep only the single most popular category (the one with the largest n_films).
 ```
+## According to the table results,sports films are the most abundant of the film genres with 74 films in the database
