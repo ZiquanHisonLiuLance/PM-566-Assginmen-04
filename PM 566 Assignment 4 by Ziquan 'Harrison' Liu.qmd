@@ -1,0 +1,263 @@
+---
+title: "PM 566 Assignment 04"
+author: "Ziquan 'Harrison' Liu"
+format: 
+  html:
+    embed-resources: true
+    toc: true
+    number-sections: true
+    theme: cosmo
+    css: styles.css
+    code-fold: show
+    df-print: paged
+execute:
+  echo: true
+  warning: false
+  message: false
+fig-width: 16
+fig-height: 18
+---
+# Question 1
+```{r}
+# Question 1
+# This whole chunk:
+# 1) Defines the original slow functions fun1() and fun2().
+# 2) Defines faster alternatives fun1alt() and fun2alt() using vectorized functions.
+# 3) Generates a test matrix dat.
+# 4) Checks that old and new versions give the same answers.
+# 5) Uses microbenchmark to compare their speed; you will read off "how much faster" from the output.
+
+# ----- Original slow functions (from assignment, kept here to be self-contained) -----
+
+fun1 <- function(mat) {                      # Define original fun1(): compute row totals using an explicit for-loop.
+  n <- nrow(mat)                             # Get the number of rows in the matrix.
+  ans <- double(n)                           # Create an empty numeric vector of length n to store each row's total.
+  for (i in 1:n) {                           # Loop over each row index from 1 to n.
+    ans[i] <- sum(mat[i, ])                  # For row i, sum all columns and store the result in ans[i].
+  }
+  ans                                        # Return the vector of row sums.
+}
+
+fun2 <- function(mat) {                      # Define original fun2(): cumulative sums along each row using nested loops.
+  n <- nrow(mat)                             # Get number of rows.
+  k <- ncol(mat)                             # Get number of columns.
+  ans <- mat                                 # Make a copy of the matrix; we will overwrite values with cumulative sums.
+  for (i in 1:n) {                           # Loop over each row.
+    for (j in 2:k) {                         # For each row, loop over columns from the 2nd column to the last.
+      ans[i, j] <- mat[i, j] + ans[i, j - 1] # Each entry becomes current value + previous cumulative value in the row.
+    }
+  }
+  ans                                        # Return the matrix of row-wise cumulative sums.
+}
+
+# ----- Faster alternative versions -----
+
+fun1alt <- function(mat) {                   # Define faster fun1alt(): compute row totals in a vectorized way.
+  rowSums(mat)                               # rowSums() is a built-in C-optimized function: it returns sum of each row directly.
+}
+
+fun2alt <- function(mat) {                   # Define faster fun2alt(): cumulative sums along each row using apply() + cumsum().
+  t(apply(mat, 1, cumsum))                   # apply(..., 1, cumsum) computes cumulative sum for each row; t() transposes back to original shape.
+}
+
+# ----- Generate test data matrix dat -----
+
+set.seed(2315)                               # Fix random seed so the random numbers (and results) are reproducible.
+dat <- matrix(                               # Create a numeric matrix called dat.
+  rnorm(200 * 100),                          # Generate 200*100 random numbers from a Normal(0,1) distribution.
+  nrow = 200                                 # Arrange them into 200 rows and 100 columns.
+)
+
+# ----- Check that new functions match the originals -----
+
+all.equal(fun1(dat), fun1alt(dat))           # Compare original fun1() output with fun1alt(); TRUE (or near-TRUE) means they match.
+
+all.equal(fun2(dat), fun2alt(dat))           # Compare original fun2() output with fun2alt(); again expecting TRUE (or near-TRUE).
+
+# ----- Compare speed using microbenchmark -----
+
+microbenchmark::microbenchmark(              # Use microbenchmark from the microbenchmark package to time both versions of fun1().
+  fun1(dat),                                 # Time the original loop-based fun1() on the test matrix dat.
+  fun1alt(dat),                              # Time the new vectorized fun1alt() on the same data.
+  unit = "relative"                          # Report times relative to the fastest method (fastest will have value 1.0).
+)
+# In the printed output, if fun1 has relative time ~5 and fun1alt ~1, then fun1alt is about 5 times faster.
+
+microbenchmark::microbenchmark(              # Now do the same timing comparison for fun2() and fun2alt().
+  fun2(dat),                                 # Time the original nested-loop fun2().
+  fun2alt(dat),                              # Time the new version using apply() + cumsum().
+  unit = "relative"                          # Again, smaller relative value = faster; you read off “how many times faster” yourself.
+)
+# To answer “How much faster is it?”, look at the microbenchmark output on your machine:
+# ratio = (relative time of slower) / (relative time of faster).
+# This ratio depends on your hardware, so you should report your own observed numbers.
+
+```
+
+# Question 2
+```{r}
+# Question 2
+# This chunk:
+# 1) Defines the sim_pi() function (same as in the assignment).
+# 2) Sets up a parallel cluster using the parallel package.
+# 3) Uses parLapply() to run sim_pi() 4,000 times in parallel, each with n = 10,000.
+# 4) Wraps the parallel code in system.time() so you can compare elapsed time with the serial version.
+# 5) Closes the cluster to free resources.
+
+# Define the Monte Carlo simulation function for estimating pi (from the assignment).
+sim_pi <- function(n = 1000, i = NULL) {     # Define sim_pi(): n is number of random points; i is a dummy index (not used).
+  p <- matrix(runif(n * 2), ncol = 2)        # Generate n random (x, y) pairs in [0,1]x[0,1] using Uniform(0,1).
+  mean(rowSums(p^2) < 1) * 4                 # Check which points fall inside quarter circle (x^2 + y^2 < 1), estimate pi = 4 * proportion.
+}
+
+# Load the parallel package for multi-core computation.
+library(parallel)                            # Attach the parallel package to access makeCluster(), parLapply(), etc.
+
+# Use same seed as serial example for comparability (exact random streams still differ in parallel).
+set.seed(1231)                               # Set the random seed so your overall result is roughly reproducible across runs.
+
+# Create a cluster of worker processes.
+cl <- makeCluster(detectCores() - 1)         # Start a cluster using one fewer core than available, leaving 1 core for the OS/other work.
+
+# Make sim_pi() available on all workers in the cluster.
+clusterExport(cl, "sim_pi")                  # Send the definition of sim_pi() to each worker process so they can call it.
+
+# Optionally make random number generation reproducible across workers.
+clusterSetRNGStream(cl, 1231)                # Initialize random streams on each worker using a common seed (helps reproducibility).
+
+# Time the parallel computation: 4,000 simulations with n = 10,000 each, run across multiple cores.
+system.time({                                # Measure how long the entire parallel block takes (R prints 'user', 'system', 'elapsed').
+  ans <- unlist(                             # Combine the list of results into a single numeric vector.
+    parLapply(                               # parLapply() is the parallel version of lapply(); it splits work across cluster workers.
+      cl,                                    # Use the cluster object we created.
+      1:4000,                                # Run 4,000 separate simulations (index 1 to 4000).
+      sim_pi,                                # Function to apply: sim_pi().
+      n = 10000                              # Extra argument passed to sim_pi(): each run uses 10,000 random points.
+    )
+  )                                          # Close parLapply() and unlist(); now ans is a numeric vector of 4,000 pi estimates.
+  print(mean(ans))                           # Print the average of the 4,000 estimates; this is your final estimate of pi.
+})                                           # Close system.time(); R will print how long the whole block took (especially 'elapsed').
+
+# Stop the cluster when finished to clean up resources.
+stopCluster(cl)                              # Shut down all worker processes so they do not keep running in the background.
+
+# To see how much faster this is:
+# - Run the original serial code with lapply() and system.time() (from the assignment).
+# - Compare the 'elapsed' times: speedup ≈ (serial elapsed) / (parallel elapsed).
+#   For example, 8 seconds serial vs. 3 seconds parallel ≈ 2.7x faster.
+```
+
+# Question 3
+```{r setup_sql, message=FALSE, warning=FALSE}
+# Question 3–6: setup database tables
+# This chunk:
+# 1) Downloads the movie tables from GitHub as data frames.
+# 2) Writes them into the in-memory SQLite database `con` as tables: film, film_category, category.
+# 3) After this, the SQL chunks can query these tables.
+library(RSQLite)                                   # Load RSQLite so we can work with SQLite databases.
+library(DBI)                                       # Load DBI which provides generic database interface functions.
+
+# Initialize a temporary in-memory SQLite database.
+con <- dbConnect(SQLite(), ":memory:")             # Create a connection named 'con'; all SQL chunks will use this.
+
+# Download CSV files from GitHub into R data frames.
+film <- read.csv("https://raw.githubusercontent.com/ivanceras/sakila/master/csv-sakila-db/film.csv")
+                                                   # Read film.csv from GitHub into a data frame called 'film'.
+
+film_category <- read.csv("https://raw.githubusercontent.com/ivanceras/sakila/master/csv-sakila-db/film_category.csv")
+                                                   # Read film_category.csv into a data frame 'film_category'.
+
+category <- read.csv("https://raw.githubusercontent.com/ivanceras/sakila/master/csv-sakila-db/category.csv")
+                                                   # Read category.csv into a data frame 'category'.
+
+# Copy data frames to the SQLite database as tables.
+dbWriteTable(con, "film", film)                    # Create a table called 'film' in the database and fill it with the film data.
+dbWriteTable(con, "film_category", film_category)  # Create a table 'film_category' and fill it with the corresponding data.
+dbWriteTable(con, "category", category)            # Create a table 'category' and fill it with the category data.
+```
+
+```{sql, connection=con}
+-- Question 3
+-- This query counts how many films there are in each rating category (e.g. G, PG, PG-13, R, etc.).
+-- It groups rows in the 'film' table by the 'rating' column and counts the number of films in each group.
+
+SELECT
+  rating,                                    -- The rating category for the film (e.g., G, PG, R).
+  COUNT(*) AS n_movies                       -- Count how many films have this rating; name the result column n_movies.
+FROM
+  film                                       -- Use the 'film' table that contains one row per film.
+GROUP BY
+  rating                                     -- Group by rating so we get one row per rating category.
+ORDER BY
+  n_movies DESC;                             -- Sort from most common rating to least common, for easier reading.
+```
+
+
+# Question 4
+```{sql, connection=con}
+-- Question 4
+-- This query calculates, for each rating category, the average replacement cost and average rental rate.
+-- It summarizes the 'replacement_cost' and 'rental_rate' columns within each rating group.
+
+SELECT
+  rating,                                        -- The rating category for the films.
+  AVG(replacement_cost) AS avg_replacement_cost,-- Average replacement_cost for films with this rating.
+  AVG(rental_rate) AS avg_rental_rate            -- Average rental_rate for films with this rating.
+FROM
+  film                                           -- Use the 'film' table where each row is a film.
+GROUP BY
+  rating                                         -- Group rows by rating so we get one summary row per rating.
+ORDER BY
+  rating;                                        -- Order the output alphabetically by rating.
+```
+
+# Question 5
+```{sql, connection=con}
+-- Question 5
+-- This query uses the film_category table together with the film table
+-- to count how many films belong to each category_id.
+-- We join on film_id to ensure we only count valid films, then group by category_id.
+
+SELECT
+  fc.category_id,                            -- The category ID (e.g., 1 = Action, 2 = Animation).
+  COUNT(DISTINCT fc.film_id) AS n_films      -- Count how many distinct films are assigned to this category_id.
+FROM
+  film_category AS fc                        -- 'film_category' links films to categories (many-to-many relationship).
+INNER JOIN
+  film AS f                                  -- Join to 'film' to ensure we are only counting film IDs that exist in the film table.
+ON
+  fc.film_id = f.film_id                     -- Join condition: rows where the film IDs match in both tables.
+GROUP BY
+  fc.category_id                             -- Group by category_id so we get one row per category ID.
+ORDER BY
+  n_films DESC;                              -- Sort from most popular category_id (most films) to least.
+```
+
+# Question 6
+```{sql, connection=con}
+-- Question 6
+-- This query extends the previous one by joining in the 'category' table,
+-- so we can see the human-readable category name and identify the most popular category.
+-- It counts films per category, then orders by that count and keeps the top one.
+
+SELECT
+  c.category_id,                             -- The numeric ID of the category.
+  c.name AS category_name,                   -- The descriptive name of the category (e.g., 'Action', 'Comedy').
+  COUNT(DISTINCT fc.film_id) AS n_films      -- How many distinct films belong to this category.
+FROM
+  category AS c                              -- 'category' table stores category_id and name.
+INNER JOIN
+  film_category AS fc                        -- 'film_category' links each film to one or more categories.
+ON
+  c.category_id = fc.category_id             -- Join categories to film_category by category_id.
+INNER JOIN
+  film AS f                                  -- Join to 'film' to ensure we only count valid film IDs.
+ON
+  fc.film_id = f.film_id                     -- Match film IDs between film_category and film.
+GROUP BY
+  c.category_id, c.name                      -- Group by both category_id and name to get one row per category.
+ORDER BY
+  n_films DESC                               -- Sort from most films to fewest films.
+LIMIT
+  1;                                         -- Keep only the single most popular category (the one with the largest n_films).
+```
